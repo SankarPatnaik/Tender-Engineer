@@ -20,6 +20,7 @@ run_crew = "tender_engineer_crew.main:run"
 train = "tender_engineer_crew.main:train"
 replay = "tender_engineer_crew.main:replay"
 test = "tender_engineer_crew.main:test"
+init_mongodb_schema = "tender_engineer_crew.init_mongodb:run"
 
 [build-system]
 requires = ["hatchling"]
