@@ -1,0 +1,96 @@
+#tasks.yaml
+extract_pdf_text:
+  description: >
+    As the Documentation Control Engineer, your task is to carefully review the uploaded tender {file_path} 
+    and extract all relevant text content. Prioritize sections containing item descriptions, 
+    technical specifications, quantity requirements, delivery timelines, and any special instructions. 
+    Maintain the logical and visual structure of the document wherever possible.
+  expected_output: >
+    A complete and accurate raw text representation of the tender document {file_path}, 
+    with clearly separated sections for items, specifications, and general notes.
+  agent: pdf_reader
+
+analyze_tender_content:
+  description: >
+    As the Procurement Requirements Engineer, your responsibility is to interpret the raw text 
+    extracted from the tender document and identify all procurement-relevant data. 
+    Carefully extract structured information such as item names, quantities, units, 
+    technical specifications, delivery dates, and any client-specific notes.
+  expected_output: >
+    A structured list of procurement items, each with the following fields: 
+    item_name, quantity, unit, specification, and delivery_date. 
+    Ensure completeness and alignment with standard procurement terminology.
+  agent: tender_analyst
+
+map_to_template:
+  description: >
+    As the Tender Structuring Engineer, your job is to convert the procurement data 
+    into the standard tender submission JSON format used by the e-commerce system. 
+    Ensure that field names are accurate, formats match the system specification, 
+    and no required field is left blank. This template will be used directly to 
+    populate the vendor-facing tender form.
+  expected_output: >
+    A clean, well-formatted JSON object adhering strictly to the system’s tender schema. 
+    The JSON should include all procurement fields and be ready for auto-submission.
+    All the data extracted from the tender document should be in the below given format.
+    
+    Final Structure:
+    {
+      "company_name": "",
+      "title": "",
+      "industry": "",
+      "product_type": "",
+      "product_category": "",
+      "description": "",
+      "contact_person": "",
+      "email": "",
+      "phone": "",
+      "location": "",
+      "items": [
+        {
+          "item_name": "",
+          "quantity": "",
+          "unit": "meters",
+          "specification": "",
+          "delivery_date": ""
+        },
+        {
+          "item_name": "",
+          "quantity": "",
+          "unit": "",
+          "specification": "",
+          "delivery_date": ""
+        }
+      ]
+    }
+  agent: template_mapper
+  output_file: tender_data.json
+
+validate_tender_json:
+  description: >
+    As the Tender Quality Assurance Engineer, you are responsible for performing a final 
+    validation on the structured tender JSON. Check for any missing or illogical values, 
+    inconsistent units, formatting issues, or misinterpreted specifications. Your review 
+    ensures that the tender data is accurate, complete, and compliant with submission standards.
+  expected_output: >
+    A detailed validation report stating whether the JSON is ‘Valid’ or highlighting specific issues. 
+    If issues are found, list them with explanations and suggested corrections.
+
+    FINAL OUTPUT:
+    {
+      "status": "",
+      "issues": [
+        {
+          "field": "",
+          "problem": "",
+          "suggestion": ""
+        },
+        {
+          "field": "",
+          "problem": "",
+          "suggestion": ""
+        }
+      ]
+    }
+  agent: tender_validator
+  output_file: tender_validation.json
