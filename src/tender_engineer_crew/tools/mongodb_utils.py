@@ -2,7 +2,7 @@ import os
 import logging
 from datetime import datetime
 from typing import Optional, Dict, Any, List
-from pymongo import MongoClient
+from pymongo import MongoClient, ASCENDING, DESCENDING
 from pymongo.errors import ConnectionFailure, PyMongoError
 from bson import ObjectId
 from dotenv import load_dotenv
@@ -13,6 +13,167 @@ load_dotenv()
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
+
+
+class MongoSchemaInitializer:
+    """Create required MongoDB collections, validators, and indexes."""
+
+    def __init__(self):
+        self.mongodb_uri = os.getenv("MONGODB_URI")
+        self.mongodb_db = os.getenv("MONGODB_DB")
+        self.vendor_collection_name = os.getenv("MONGODB_COLLECTION", "vendors")
+        self.tender_collection_name = os.getenv("TENDER_MONGODB_COLLECTION", "tender_documents")
+
+        if not all([self.mongodb_uri, self.mongodb_db]):
+            raise ValueError("Missing required MongoDB environment variables. Check MONGODB_URI and MONGODB_DB")
+
+        self.client = MongoClient(self.mongodb_uri)
+        self.db = self.client[self.mongodb_db]
+        self.client.admin.command("ping")
+
+    def _create_or_update_collection(self, collection_name: str, validator: Dict[str, Any]):
+        """Create collection if missing or update validator if it exists."""
+        existing_collections = self.db.list_collection_names()
+
+        if collection_name in existing_collections:
+            self.db.command({
+                "collMod": collection_name,
+                "validator": validator,
+                "validationLevel": "moderate"
+            })
+            logger.info(f"✅ Updated validator for collection: {collection_name}")
+        else:
+            self.db.create_collection(
+                collection_name,
+                validator=validator,
+                validationLevel="moderate"
+            )
+            logger.info(f"✅ Created collection: {collection_name}")
+
+    def create_vendor_collection(self):
+        """Create vendor catalog collection used for semantic matching."""
+        vendor_validator = {
+            "$jsonSchema": {
+                "bsonType": "object",
+                "required": ["companyName", "segment"],
+                "properties": {
+                    "companyName": {"bsonType": "string", "description": "Vendor company name"},
+                    "segment": {"bsonType": "string", "description": "Power industry segment"},
+                    "product_name": {"bsonType": ["string", "null"]},
+                    "service_name": {"bsonType": ["string", "null"]},
+                    "description": {"bsonType": ["string", "null"]},
+                    "contact": {
+                        "bsonType": ["object", "null"],
+                        "properties": {
+                            "email": {"bsonType": ["string", "null"]},
+                            "phone": {"bsonType": ["string", "null"]},
+                            "website": {"bsonType": ["string", "null"]}
+                        }
+                    },
+                    "rating": {"bsonType": ["double", "int", "null"], "minimum": 0, "maximum": 5},
+                    "created_at": {"bsonType": ["date", "null"]},
+                    "updated_at": {"bsonType": ["date", "null"]}
+                }
+            }
+        }
+
+        self._create_or_update_collection(self.vendor_collection_name, vendor_validator)
+        vendor_collection = self.db[self.vendor_collection_name]
+        vendor_collection.create_index([("companyName", ASCENDING)], unique=True, name="uq_company_name")
+        vendor_collection.create_index([("segment", ASCENDING)], name="idx_segment")
+        vendor_collection.create_index([("product_name", ASCENDING)], sparse=True, name="idx_product_name")
+        vendor_collection.create_index([("service_name", ASCENDING)], sparse=True, name="idx_service_name")
+        logger.info(f"✅ Indexes created for vendor collection: {self.vendor_collection_name}")
+
+    def create_tender_collection(self):
+        """Create tender upload collection for extraction, summary, and costing output."""
+        tender_validator = {
+            "$jsonSchema": {
+                "bsonType": "object",
+                "required": ["original_filename", "processing_status", "created_at", "updated_at"],
+                "properties": {
+                    "original_filename": {"bsonType": "string"},
+                    "file_size": {"bsonType": ["long", "int", "null"]},
+                    "file_type": {"bsonType": ["string", "null"]},
+                    "file_extension": {"bsonType": ["string", "null"]},
+                    "s3_bucket": {"bsonType": ["string", "null"]},
+                    "s3_key": {"bsonType": ["string", "null"]},
+                    "s3_url": {"bsonType": ["string", "null"]},
+                    "s3_upload_timestamp": {"bsonType": ["date", "null"]},
+                    "processing_status": {
+                        "enum": ["uploaded", "processing", "completed", "failed"]
+                    },
+                    "tender_data": {"bsonType": ["object", "null"]},
+                    "summary": {"bsonType": ["string", "null"], "description": "Human-readable tender summary"},
+                    "vendor_matches": {
+                        "bsonType": ["array", "null"],
+                        "items": {
+                            "bsonType": "object",
+                            "required": ["companyName"],
+                            "properties": {
+                                "companyName": {"bsonType": "string"},
+                                "matched_items": {
+                                    "bsonType": ["array", "null"],
+                                    "items": {
+                                        "bsonType": "object",
+                                        "properties": {
+                                            "description": {"bsonType": ["string", "null"]},
+                                            "quantity": {"bsonType": ["double", "int", "long", "null"]},
+                                            "unit": {"bsonType": ["string", "null"]},
+                                            "estimated_unit_cost": {"bsonType": ["double", "int", "long", "null"]},
+                                            "estimated_total_cost": {"bsonType": ["double", "int", "long", "null"]},
+                                            "currency": {"bsonType": ["string", "null"]}
+                                        }
+                                    }
+                                },
+                                "total_estimated_cost": {"bsonType": ["double", "int", "long", "null"]},
+                                "currency": {"bsonType": ["string", "null"]},
+                                "confidence_score": {"bsonType": ["double", "int", "null"], "minimum": 0, "maximum": 1}
+                            }
+                        }
+                    },
+                    "validation_results": {"bsonType": ["object", "null"]},
+                    "processing_logs": {
+                        "bsonType": ["array", "null"],
+                        "items": {
+                            "bsonType": "object",
+                            "required": ["timestamp", "status", "message"],
+                            "properties": {
+                                "timestamp": {"bsonType": "date"},
+                                "status": {"bsonType": "string"},
+                                "message": {"bsonType": "string"}
+                            }
+                        }
+                    },
+                    "created_at": {"bsonType": "date"},
+                    "updated_at": {"bsonType": "date"}
+                }
+            }
+        }
+
+        self._create_or_update_collection(self.tender_collection_name, tender_validator)
+        tender_collection = self.db[self.tender_collection_name]
+        tender_collection.create_index([("processing_status", ASCENDING)], name="idx_processing_status")
+        tender_collection.create_index([("created_at", DESCENDING)], name="idx_created_at_desc")
+        tender_collection.create_index([("original_filename", ASCENDING), ("created_at", DESCENDING)], name="idx_filename_created")
+        logger.info(f"✅ Indexes created for tender collection: {self.tender_collection_name}")
+
+    def initialize(self):
+        """Initialize all required Mongo collections."""
+        self.create_vendor_collection()
+        self.create_tender_collection()
+        logger.info("🎉 MongoDB initialization completed successfully")
+
+
+def initialize_mongodb_schema() -> bool:
+    """Convenience function to initialize the MongoDB schema for this project."""
+    try:
+        initializer = MongoSchemaInitializer()
+        initializer.initialize()
+        return True
+    except Exception as e:
+        logger.error(f"❌ Error initializing MongoDB schema: {e}")
+        return False
 
 class TenderMetadataManager:
     """Handle MongoDB operations for tender metadata storage"""

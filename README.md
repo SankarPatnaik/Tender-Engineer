@@ -52,3 +52,26 @@ For support, questions, or feedback regarding the TenderEngineerCrew Crew or cre
 - [Chat with our docs](https://chatg.pt/DWjSBZn)
 
 Let's create wonders together with the power and simplicity of crewAI.
+
+
+## MongoDB Setup for Tender + Vendor Costing
+
+This project now includes a MongoDB schema initializer for the power tender workflow. It creates and validates:
+
+- **Vendor collection** (`MONGODB_COLLECTION`, default `vendors`) for vendor profiles used in semantic matching.
+- **Tender collection** (`TENDER_MONGODB_COLLECTION`, default `tender_documents`) for uploaded tender files, extracted summaries, vendor matches, and cost estimates.
+
+### Required environment variables
+
+- `MONGODB_URI`
+- `MONGODB_DB`
+- `MONGODB_COLLECTION` (optional, defaults to `vendors`)
+- `TENDER_MONGODB_COLLECTION` (optional, defaults to `tender_documents`)
+
+### Initialize database schema
+
+```bash
+uv run init_mongodb_schema
+```
+
+This command creates collections (if missing), applies JSON schema validators, and creates indexes for status/date/vendor lookup performance.
